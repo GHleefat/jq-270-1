@@ -3,11 +3,12 @@ import { useGameStore } from "@/store/gameStore";
 import { CAR_COUNT } from "@/types/game";
 
 const TrainView = () => {
-  const { trainVisible, cars, phase } = useGameStore();
+  const { trainVisible, cars, phase, boardingProgress } = useGameStore();
 
   if (!trainVisible) return null;
 
   const isLeaving = phase === "result" || phase === "gameover";
+  const isBoarding = phase === "boarding";
 
   return (
     <div className="relative w-full mb-6">
@@ -67,15 +68,48 @@ const TrainView = () => {
                 {car.boardedPassengers}/{car.capacity}
               </div>
 
-              {overloaded && (
+              {overloaded && !isBoarding && (
                 <div className="absolute -top-2 -right-2 px-2 py-0.5 bg-subway-danger text-white text-xs font-bold rounded-full animate-pulse">
                   超载!
+                </div>
+              )}
+
+              {isBoarding && (
+                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
+                  <div className="w-3 h-3 bg-subway-accent rounded-full animate-ping opacity-75" />
                 </div>
               )}
             </div>
           );
         })}
       </div>
+
+      {isBoarding && (
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-1.5 bg-subway-accent/20 border border-subway-accent/40 rounded-full">
+          <svg
+            className="w-4 h-4 text-subway-accent"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+            />
+          </svg>
+          <span className="text-subway-accent text-sm font-medium">
+            乘客正在上车... {boardingProgress}%
+          </span>
+          <div className="w-24 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-subway-accent rounded-full transition-all duration-150"
+              style={{ width: `${boardingProgress}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="h-3 bg-gradient-to-b from-slate-800 to-slate-900 rounded-b-xl mt-[-2px] relative">
         <div className="absolute inset-x-0 top-0 flex justify-around">

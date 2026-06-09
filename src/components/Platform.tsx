@@ -4,9 +4,11 @@ import TrainView from "./TrainView";
 import WaitingArea from "./WaitingArea";
 
 const Platform = () => {
-  const { cars, phase, tickCountdown, calculateResults, countdown } =
+  const { cars, phase, tickCountdown, tickBoarding, boardingProgress } =
     useGameStore();
-  const boardingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const boardingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
@@ -23,18 +25,18 @@ const Platform = () => {
   }, [phase, tickCountdown]);
 
   useEffect(() => {
-    if (phase === "boarding" && countdown === 3) {
-      boardingTimerRef.current = setTimeout(() => {
-        calculateResults();
-      }, 3000);
+    if (phase === "boarding") {
+      boardingIntervalRef.current = setInterval(() => {
+        tickBoarding();
+      }, 150);
     }
 
     return () => {
-      if (boardingTimerRef.current) {
-        clearTimeout(boardingTimerRef.current);
+      if (boardingIntervalRef.current) {
+        clearInterval(boardingIntervalRef.current);
       }
     };
-  }, [phase, countdown, calculateResults]);
+  }, [phase, tickBoarding]);
 
   return (
     <div className="relative">

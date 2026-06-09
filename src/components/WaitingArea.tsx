@@ -8,7 +8,8 @@ interface WaitingAreaProps {
 }
 
 const WaitingArea = ({ car }: WaitingAreaProps) => {
-  const { phase, deployGuide, guides, recallGuide } = useGameStore();
+  const { phase, deployGuide, guides, recallGuide, boardingProgress } =
+    useGameStore();
   const [isDragOver, setIsDragOver] = useState(false);
 
   const densityRatio = car.waitingPassengers / car.capacity;
@@ -148,6 +149,30 @@ const WaitingArea = ({ car }: WaitingAreaProps) => {
       {phase === "waiting" && (
         <div className="absolute bottom-2 right-2 text-xs text-slate-500">
           拖拽疏导员到此处
+        </div>
+      )}
+
+      {phase === "boarding" && (
+        <div className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-subway-accent/20 to-transparent flex items-center justify-center">
+          <div className="flex items-center gap-2">
+            <div className="flex gap-0.5">
+              <div
+                className="w-1.5 h-1.5 bg-subway-accent rounded-full animate-bounce"
+                style={{ animationDelay: "0ms" }}
+              />
+              <div
+                className="w-1.5 h-1.5 bg-subway-accent rounded-full animate-bounce"
+                style={{ animationDelay: "150ms" }}
+              />
+              <div
+                className="w-1.5 h-1.5 bg-subway-accent rounded-full animate-bounce"
+                style={{ animationDelay: "300ms" }}
+              />
+            </div>
+            <span className="text-subway-accent text-xs font-medium">
+              上车中 {boardingProgress}%
+            </span>
+          </div>
         </div>
       )}
     </div>

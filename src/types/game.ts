@@ -4,6 +4,7 @@ export interface Car {
   waitingPassengers: number;
   boardedPassengers: number;
   guides: number;
+  finalBoarded?: number;
 }
 
 export interface Guide {
@@ -36,6 +37,7 @@ export interface GameState {
   lastRoundResults: RoundResult[] | null;
   trainVisible: boolean;
   showResultModal: boolean;
+  boardingProgress: number;
 
   initGame: () => void;
   startRound: () => void;
@@ -43,6 +45,7 @@ export interface GameState {
   recallGuide: (guideId: number) => void;
   tickCountdown: () => void;
   triggerBoarding: () => void;
+  tickBoarding: () => void;
   calculateResults: () => void;
   nextRound: () => void;
   closeResultModal: () => void;
