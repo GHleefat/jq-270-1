@@ -4,6 +4,7 @@ export interface Car {
   waitingPassengers: number;
   boardedPassengers: number;
   guides: number;
+  initialWaiting?: number;
   finalBoarded?: number;
 }
 

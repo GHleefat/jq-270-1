@@ -10,7 +10,6 @@ import {
   WAITING_TIME,
   MAX_ROUNDS,
   GUIDE_REDUCTION_RATE,
-  OVERLOAD_PENALTY,
   ON_TIME_BONUS,
 } from "@/types/game";
 
@@ -41,13 +40,9 @@ const generateRandomPassengers = (level: number): number[] => {
     if (i === CAR_COUNT - 1) {
       result.push(remaining);
     } else {
-      const minShare = Math.max(
-        2,
-        Math.floor((basePassengers / CAR_COUNT) * 0.3),
-      );
+      const minShare = Math.max(2, Math.floor((basePassengers / CAR_COUNT) * 0.3));
       const maxShare = Math.floor((basePassengers / CAR_COUNT) * 2.5);
-      const share =
-        Math.floor(Math.random() * (maxShare - minShare + 1)) + minShare;
+      const share = Math.floor(Math.random() * (maxShare - minShare + 1)) + minShare;
       const actual = Math.min(share, remaining);
       result.push(actual);
       remaining -= actual;
@@ -64,131 +59,81 @@ const generateRandomPassengers = (level: number): number[] => {
 
 const applyGuideEffect = (cars: Car[]): Car[] => {
   const result = cars.map((c) => ({ ...c }));
-  let totalToRedistribute = 0;
-  const reductions: { carId: number; amount: number }[] = [];
+  const sourceCarIds: number[] = [];
+  let totalToMove = 0;
 
-  result.forEach((car) => {
+  for (let i = 0; i < result.length; i++) {
+    const car = result[i];
     if (car.guides > 0 && car.waitingPassengers > 0) {
-      const reduction = Math.min(
+      const moveCount = Math.min(
         car.waitingPassengers,
-        Math.floor(car.waitingPassengers * GUIDE_REDUCTION_RATE * car.guides),
+        Math.max(1, Math.floor(car.waitingPassengers * GUIDE_REDUCTION_RATE * car.guides))
       );
-      if (reduction > 0) {
-        reductions.push({ carId: car.id, amount: reduction });
-        totalToRedistribute += reduction;
+      if (moveCount > 0) {
+        sourceCarIds.push(car.id);
+        totalToMove += moveCount;
+        result[i] = { ...car, waitingPassengers: car.waitingPassengers - moveCount };
       }
     }
-  });
-
-  if (totalToRedistribute === 0) return result;
-
-  reductions.forEach(({ carId, amount }) => {
-    const idx = result.findIndex((c) => c.id === carId);
-    result[idx] = {
-      ...result[idx],
-      waitingPassengers: result[idx].waitingPassengers - amount,
-    };
-  });
-
-  const targetCars = result
-    .filter((c) => c.guides === 0 || reductions.every((r) => r.carId !== c.id))
-    .sort((a, b) => a.waitingPassengers - b.waitingPassengers);
-
-  if (targetCars.length === 0) return result;
-
-  const totalWaitingSpace = targetCars.reduce(
-    (sum, c) => sum + Math.max(0, c.capacity - c.waitingPassengers),
-    0,
-  );
-
-  let remaining = totalToRedistribute;
-
-  if (totalWaitingSpace > 0) {
-    targetCars.forEach((target) => {
-      if (remaining <= 0) return;
-      const availableSlot = Math.max(
-        0,
-        target.capacity - target.waitingPassengers,
-      );
-      if (availableSlot <= 0) return;
-
-      const share = Math.min(
-        availableSlot,
-        Math.ceil((totalToRedistribute * availableSlot) / totalWaitingSpace),
-      );
-      const actualShare = Math.min(share, remaining);
-
-      const idx = result.findIndex((c) => c.id === target.id);
-      result[idx] = {
-        ...result[idx],
-        waitingPassengers: result[idx].waitingPassengers + actualShare,
-      };
-      remaining -= actualShare;
-    });
   }
 
-  if (remaining > 0) {
-    targetCars.forEach((target) => {
-      if (remaining <= 0) return;
-      const perCar = Math.ceil(remaining / targetCars.length);
-      const actual = Math.min(perCar, remaining);
-      const idx = result.findIndex((c) => c.id === target.id);
-      result[idx] = {
-        ...result[idx],
-        waitingPassengers: result[idx].waitingPassengers + actual,
-      };
-      remaining -= actual;
-    });
+  if (totalToMove === 0) return result;
+
+  const targetCars = result
+    .filter((c) => !sourceCarIds.includes(c.id))
+    .sort((a, b) => a.waitingPassengers - b.waitingPassengers);
+
+  const targets = targetCars.length > 0 ? targetCars : result.sort((a, b) => a.waitingPassengers - b.waitingPassengers);
+
+  let remaining = totalToMove;
+  let idx = 0;
+  while (remaining > 0 && idx < 10000) {
+    const target = targets[idx % targets.length];
+    const carIdx = result.findIndex((c) => c.id === target.id);
+    result[carIdx] = {
+      ...result[carIdx],
+      waitingPassengers: result[carIdx].waitingPassengers + 1,
+    };
+    remaining--;
+    idx++;
   }
 
   return result;
 };
 
 const redistributeOverflow = (cars: Car[]): Car[] => {
-  let overflowCars = cars.filter((c) => c.waitingPassengers > c.capacity);
-  const underflowCars = cars.filter((c) => c.waitingPassengers < c.capacity);
+  const result = cars.map((c) => ({ ...c }));
 
-  if (overflowCars.length === 0 || underflowCars.length === 0) return cars;
+  for (let iter = 0; iter < 10; iter++) {
+    let changed = false;
+    for (let i = 0; i < result.length; i++) {
+      if (result[i].waitingPassengers > result[i].capacity) {
+        const overflow = result[i].waitingPassengers - result[i].capacity;
+        const underflowCars = result
+          .map((c, idx) => ({ car: c, idx }))
+          .filter(({ car }) => car.waitingPassengers < car.capacity && car.id !== result[i].id)
+          .sort((a, b) => a.car.waitingPassengers - b.car.waitingPassengers);
 
-  const result = [...cars];
+        if (underflowCars.length === 0) continue;
 
-  overflowCars.forEach((overflowCar) => {
-    const overflow = overflowCar.waitingPassengers - overflowCar.capacity;
-    if (overflow <= 0) return;
-
-    let toRedistribute = overflow;
-    const availableSlots = underflowCars.reduce(
-      (sum, c) => sum + (c.capacity - c.waitingPassengers),
-      0,
-    );
-
-    if (availableSlots <= 0) return;
-
-    underflowCars.forEach((underCar) => {
-      const slot = underCar.capacity - underCar.waitingPassengers;
-      if (slot <= 0 || toRedistribute <= 0) return;
-
-      const share = Math.min(
-        slot,
-        Math.ceil((overflow * slot) / availableSlots),
-      );
-      const actualShare = Math.min(share, toRedistribute);
-
-      const overflowIdx = result.findIndex((c) => c.id === overflowCar.id);
-      const underIdx = result.findIndex((c) => c.id === underCar.id);
-
-      result[overflowIdx] = {
-        ...result[overflowIdx],
-        waitingPassengers: result[overflowIdx].waitingPassengers - actualShare,
-      };
-      result[underIdx] = {
-        ...result[underIdx],
-        waitingPassengers: result[underIdx].waitingPassengers + actualShare,
-      };
-
-      toRedistribute -= actualShare;
-    });
-  });
+        let toMove = overflow;
+        let ui = 0;
+        while (toMove > 0 && ui < underflowCars.length) {
+          const { car: underCar, idx: underIdx } = underflowCars[ui];
+          const slot = underCar.capacity - underCar.waitingPassengers;
+          if (slot > 0) {
+            const move = Math.min(1, slot, toMove);
+            result[i] = { ...result[i], waitingPassengers: result[i].waitingPassengers - move };
+            result[underIdx] = { ...result[underIdx], waitingPassengers: result[underIdx].waitingPassengers + move };
+            toMove -= move;
+            changed = true;
+          }
+          ui++;
+        }
+      }
+    }
+    if (!changed) break;
+  }
 
   return result;
 };
@@ -234,6 +179,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       waitingPassengers: passengers[i],
       boardedPassengers: 0,
       guides: 0,
+      initialWaiting: undefined,
+      finalBoarded: undefined,
     }));
     const resetGuides = createInitialGuides();
 
@@ -258,16 +205,16 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (!guide || guide.isDeployed) return;
 
     const newGuides = state.guides.map((g) =>
-      g.id === guideId ? { ...g, isDeployed: true, deployedCarId: carId } : g,
+      g.id === guideId ? { ...g, isDeployed: true, deployedCarId: carId } : g
     );
-    const newCars = state.cars.map((c) =>
-      c.id === carId ? { ...c, guides: c.guides + 1 } : c,
+    let newCars = state.cars.map((c) =>
+      c.id === carId ? { ...c, guides: c.guides + 1 } : c
     );
 
-    let finalCars = applyGuideEffect(newCars);
-    finalCars = redistributeOverflow(finalCars);
+    newCars = applyGuideEffect(newCars);
+    newCars = redistributeOverflow(newCars);
 
-    set({ guides: newGuides, cars: finalCars });
+    set({ guides: newGuides, cars: newCars });
   },
 
   recallGuide: (guideId: number) => {
@@ -279,10 +226,10 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     const carId = guide.deployedCarId;
     const newGuides = state.guides.map((g) =>
-      g.id === guideId ? { ...g, isDeployed: false, deployedCarId: null } : g,
+      g.id === guideId ? { ...g, isDeployed: false, deployedCarId: null } : g
     );
     const newCars = state.cars.map((c) =>
-      c.id === carId ? { ...c, guides: Math.max(0, c.guides - 1) } : c,
+      c.id === carId ? { ...c, guides: Math.max(0, c.guides - 1) } : c
     );
 
     set({ guides: newGuides, cars: newCars });
@@ -302,16 +249,18 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   triggerBoarding: () => {
     const state = get();
-    const carsWithFinal = state.cars.map((car) => ({
+    const carsWithInitial = state.cars.map((car) => ({
       ...car,
+      initialWaiting: car.waitingPassengers,
       finalBoarded: Math.min(car.waitingPassengers, car.capacity + 5),
+      boardedPassengers: 0,
     }));
     set({
       phase: "boarding",
       trainVisible: true,
       countdown: 3,
       boardingProgress: 0,
-      cars: carsWithFinal,
+      cars: carsWithInitial,
     });
   },
 
@@ -319,27 +268,31 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get();
     if (state.phase !== "boarding") return;
 
-    const newProgress = state.boardingProgress + 10;
+    const step = 10;
+    const newProgress = Math.min(state.boardingProgress + step, 100);
 
     if (newProgress >= 100) {
-      const updatedCars = state.cars.map((car) => ({
+      const finalCars = state.cars.map((car) => ({
         ...car,
-        boardedPassengers: car.finalBoarded ?? car.waitingPassengers,
+        boardedPassengers: car.finalBoarded ?? car.boardedPassengers,
         waitingPassengers: 0,
+        initialWaiting: undefined,
         finalBoarded: undefined,
       }));
-      set({ cars: updatedCars, boardingProgress: 100 });
-      get().calculateResults();
+      set({ cars: finalCars, boardingProgress: 100 });
+      setTimeout(() => {
+        get().calculateResults();
+      }, 400);
     } else {
       const updatedCars = state.cars.map((car) => {
-        const totalBoarded = car.finalBoarded ?? 0;
-        const totalWaiting = car.waitingPassengers + car.boardedPassengers;
-        const currentBoarded = Math.floor(totalBoarded * (newProgress / 100));
-        const currentWaiting = Math.max(0, totalWaiting - currentBoarded);
+        const init = car.initialWaiting ?? car.waitingPassengers;
+        const final = car.finalBoarded ?? car.boardedPassengers;
+        const boarded = Math.floor(final * (newProgress / 100));
+        const waiting = Math.max(0, init - boarded);
         return {
           ...car,
-          boardedPassengers: currentBoarded,
-          waitingPassengers: currentWaiting,
+          boardedPassengers: boarded,
+          waitingPassengers: waiting,
         };
       });
       set({ cars: updatedCars, boardingProgress: newProgress });
@@ -356,9 +309,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     state.cars.forEach((car) => {
       const boarded = car.boardedPassengers;
       const isOverloaded = boarded > car.capacity;
-      const delayPenalty = isOverloaded
-        ? Math.ceil((boarded - car.capacity) * 10)
-        : 0;
+      const delayPenalty = isOverloaded ? Math.ceil((boarded - car.capacity) * 10) : 0;
 
       if (isOverloaded) {
         overloadCount++;
@@ -406,9 +357,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (state.phase !== "waiting") return;
 
     let newCars = state.cars.map((c) =>
-      c.id === carId
-        ? { ...c, waitingPassengers: c.waitingPassengers + count }
-        : c,
+      c.id === carId ? { ...c, waitingPassengers: c.waitingPassengers + count } : c
     );
     newCars = redistributeOverflow(newCars);
 
